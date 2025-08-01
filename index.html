@@ -30,11 +30,12 @@
         }
         .canvas-bg-image {
             position: absolute;
-            top: 0;
-            left: 0;
+            /* Center the background image */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
             width: 100%;
-            height: 100%;
-            object-fit: cover;
+            height: auto;
         }
         #glidingCanvas, #planViewCanvas {
             position: absolute;
@@ -118,7 +119,7 @@
         </div>
         <!-- Side view -->
         <div id="sideViewContainer" class="canvas-container rounded-xl overflow-hidden relative">
-            <img id="sideViewBgImage" class="canvas-bg-image" src="https://i.imgur.com/DrFYyYX.jpeg" alt="Virtual airport map (Side View)">
+            <img id="sideViewBgImage" class="canvas-bg-image" src="https://i.imgur.com/DnOKyY7.jpeg" alt="Virtual airport map (Side View)">
             <canvas id="glidingCanvas"></canvas>
         </div>
     </div>
@@ -128,12 +129,10 @@
             try {
                 // Get all canvas and container elements
                 const sideViewContainer = document.getElementById('sideViewContainer');
-                const sideViewBg = document.getElementById('sideViewBgImage');
                 const sideViewCanvas = document.getElementById('glidingCanvas');
                 const sideViewCtx = sideViewCanvas ? sideViewCanvas.getContext('2d') : null;
 
                 const planViewContainer = document.getElementById('planViewContainer');
-                const planViewBg = document.getElementById('planViewBgImage');
                 const planViewCanvas = document.getElementById('planViewCanvas');
                 const planViewCtx = planViewCanvas ? planViewCanvas.getContext('2d') : null;
 
@@ -144,18 +143,24 @@
                 const heightValueEl = document.getElementById('heightValue');
                 const angleValueEl = document.getElementById('angleValue');
                 
-                // Fixed values and scale constants
+                // Fixed values and proportional scale constants
                 const MILE_IN_FEET = 5280;
-                // PIXELS_PER_MILE_TOP: Calculated from top view 1 mile marker x (840) and landing point x (486)
-                const PIXELS_PER_MILE_TOP = 840 - 486; // 354 pixels per mile
-                // PIXELS_PER_MILE_SIDE: Calculated from side view 1 mile marker x (834) and landing point x (128)
-                const PIXELS_PER_MILE_SIDE = 834 - 128; // 706 pixels per mile
-                const PIXELS_PER_FOOT_SIDE = PIXELS_PER_MILE_SIDE / MILE_IN_FEET;
                 const FIELD_ELEVATION_FT = 320;
-                const L_FIXED = { x: 486.00, y: 78.00 }; // Fixed coordinates for top view landing spot
-                const B_FIXED = { x: 128.00, y: 609.59 }; // Fixed coordinates for side view landing spot
-                const MILE_MARKER_TOP = { x: L_FIXED.x + PIXELS_PER_MILE_TOP, y: L_FIXED.y };
-                const MILE_MARKER_SIDE = { x: B_FIXED.x + PIXELS_PER_MILE_SIDE, y: B_FIXED.y };
+
+                // User-defined proportional coordinates for responsiveness
+                // Plan View: Landing spot (blue), Helicopter position for 1 mile (red)
+                const L_PERCENT = { x: 0.378, y: 0.5 };
+                // Updated to 65% as requested
+                const H_MILE_PERCENT = { x: 0.65, y: 0.5 };
+                // Side View: Landing spot (blue), Ground point for 1 mile (green)
+                // Updated y coordinate to be 14.2% from the BOTTOM of the canvas
+                const B_PERCENT = { x: 0.106, y: 1 - 0.142 }; // Position from bottom (1 - 0.142)
+                // Updated to 64% as requested
+                const C_MILE_PERCENT = { x: 0.64, y: 1 - 0.142 }; // Position from bottom (1 - 0.142)
+
+                let PIXELS_PER_MILE_TOP = 0;
+                let PIXELS_PER_MILE_SIDE = 0;
+                let PIXELS_PER_FOOT_SIDE = 0;
 
                 // State object to hold all synchronized values
                 const state = {
@@ -164,12 +169,12 @@
                     fieldElevation: FIELD_ELEVATION_FT, // in ft
                     sideView: {
                         A: { x: 0, y: 0, fixed: false }, // Helicopter point (red)
-                        B: B_FIXED,  // Landing point (blue), now fixed
-                        groundLevelY: B_FIXED.y, // Y-coordinate of the ground line
+                        B: { x: 0, y: 0, fixed: true },  // Landing point (blue)
+                        groundLevelY: 0, // Y-coordinate of the ground line
                     },
                     planView: {
                         H: { x: 0, y: 0, fixed: false }, // Helicopter position (red)
-                        L: L_FIXED   // Landing spot (blue), now fixed
+                        L: { x: 0, y: 0, fixed: true }   // Landing spot (blue)
                     },
                     selectedVertex: null
                 };
@@ -180,7 +185,6 @@
                 function syncInputsToState() {
                     state.altitude = parseFloat(altitudeValueEl.textContent) || 0;
                     state.groundDistance = parseFloat(groundDistanceValueEl.textContent) || 0;
-                    // Field elevation is now fixed
                     fieldElevationValueEl.textContent = state.fieldElevation.toFixed(0);
                 }
 
@@ -206,7 +210,7 @@
                     const pA = state.sideView.A;
                     const pB = state.sideView.B;
                     // The ground point (green) is calculated from A's x and B's y
-                    const pC = { x: pA.x, y: pB.y }; 
+                    const pC = { x: pA.x, y: pB.y };  
                     
                     // Draw the triangle lines
                     sideViewCtx.beginPath();
@@ -240,7 +244,7 @@
                     sideViewCtx.lineTo(pB.x, pB.y);
                     sideViewCtx.strokeStyle = '#3b82f6';
                     sideViewCtx.lineWidth = 3;
-                    sideViewCtx.stroke(); 
+                    sideViewCtx.stroke();
                     
                     const drawVertex = (ctx, x, y, color) => {
                         ctx.beginPath();
@@ -253,11 +257,13 @@
                     };
                     drawVertex(sideViewCtx, pA.x, pA.y, '#ef4444');
                     drawVertex(sideViewCtx, pB.x, pB.y, '#3b82f6');
-                    drawVertex(sideViewCtx, pC.x, pC.y, '#10b981'); 
+                    drawVertex(sideViewCtx, pC.x, pC.y, '#10b981');
                     drawRightAngleSymbol(sideViewCtx, pC, pA, pB);
 
-                    // Draw the 1-mile marker and label
-                    drawMarker(sideViewCtx, MILE_MARKER_SIDE.x, MILE_MARKER_SIDE.y, '1 mile');
+                    // Draw the 1-mile marker and label based on new proportional coordinate
+                    const mileMarkerSideX = C_MILE_PERCENT.x * sideViewCanvas.width;
+                    const mileMarkerSideY = C_MILE_PERCENT.y * sideViewCanvas.height;
+                    drawMarker(sideViewCtx, mileMarkerSideX, mileMarkerSideY, '1 mile');
 
                     // Draw labels related to approach type when the red dot is dragged
                     if (draggedVertex && draggedVertex.view === 'sideView' && draggedVertex.id === 'A') {
@@ -343,9 +349,11 @@
                     drawVertex(planViewCtx, pH.x, pH.y, '#ef4444');
                     drawVertex(planViewCtx, pL.x, pL.y, '#3b82f6');
 
-                    // Draw the 1-mile marker and label
-                    drawMarker(planViewCtx, MILE_MARKER_TOP.x, MILE_MARKER_TOP.y, '1 mile');
-
+                    // Draw the 1-mile marker and label based on new proportional coordinate
+                    const mileMarkerTopX = H_MILE_PERCENT.x * planViewCanvas.width;
+                    const mileMarkerTopY = H_MILE_PERCENT.y * planViewCanvas.height;
+                    drawMarker(planViewCtx, mileMarkerTopX, mileMarkerTopY, '1 mile');
+                    
                     planViewCtx.restore();
                 }
 
@@ -412,22 +420,28 @@
                     } else if (canvas === planViewCanvas) {
                         // Check if mouse is near point H (red)
                         if (getDistance({ x: mouseX, y: mouseY }, state.planView.H) < checkDistance) {
-                             return { view: 'planView', id: 'H' };
+                            return { view: 'planView', id: 'H' };
                         }
                     }
                     return null;
                 }
 
-                // Initial setup for canvas points based on state
+                // Initial setup for canvas points based on state and resizing
                 function initializePoints() {
                     if (sideViewCanvas && planViewCanvas) {
-                        // The blue points are now fixed based on constants
-                        state.sideView.B.x = B_FIXED.x;
-                        state.sideView.B.y = B_FIXED.y;
-                        state.planView.L.x = L_FIXED.x;
-                        state.planView.L.y = L_FIXED.y;
+                        // Recalculate dynamic scales on resize
+                        PIXELS_PER_MILE_TOP = (H_MILE_PERCENT.x - L_PERCENT.x) * planViewCanvas.width;
+                        PIXELS_PER_MILE_SIDE = (C_MILE_PERCENT.x - B_PERCENT.x) * sideViewCanvas.width;
+                        PIXELS_PER_FOOT_SIDE = PIXELS_PER_MILE_SIDE / MILE_IN_FEET;
+                        
+                        // Set the fixed blue points based on new percentages and canvas size
+                        state.planView.L.x = L_PERCENT.x * planViewCanvas.width;
+                        state.planView.L.y = L_PERCENT.y * planViewCanvas.height;
 
-                        // Calculate red point position based on current state values and new proportional scales
+                        state.sideView.B.x = B_PERCENT.x * sideViewCanvas.width;
+                        state.sideView.B.y = B_PERCENT.y * sideViewCanvas.height;
+
+                        // Calculate red point positions based on current state values
                         const groundDistPixelsSide = state.groundDistance * PIXELS_PER_MILE_SIDE;
                         const groundDistPixelsTop = state.groundDistance * PIXELS_PER_MILE_TOP;
                         const altitudePixels = (state.altitude - state.fieldElevation) * PIXELS_PER_FOOT_SIDE;
@@ -485,6 +499,11 @@
                     const mouseY = e.clientY - rect.top;
                     
                     if (draggedVertex.view === 'sideView') {
+                        // Recalculate scales in case of a resize during drag
+                        PIXELS_PER_MILE_SIDE = (C_MILE_PERCENT.x - B_PERCENT.x) * sideViewCanvas.width;
+                        PIXELS_PER_FOOT_SIDE = PIXELS_PER_MILE_SIDE / MILE_IN_FEET;
+                        PIXELS_PER_MILE_TOP = (H_MILE_PERCENT.x - L_PERCENT.x) * planViewCanvas.width;
+
                         if (draggedVertex.id === 'A') {
                             state.sideView.A.x = mouseX;
                             state.sideView.A.y = mouseY;
@@ -499,6 +518,10 @@
                         state.planView.H.x = state.planView.L.x + (state.groundDistance * PIXELS_PER_MILE_TOP);
 
                     } else if (draggedVertex.view === 'planView') {
+                            // Recalculate scales in case of a resize during drag
+                        PIXELS_PER_MILE_TOP = (H_MILE_PERCENT.x - L_PERCENT.x) * planViewCanvas.width;
+                        PIXELS_PER_MILE_SIDE = (C_MILE_PERCENT.x - B_PERCENT.x) * sideViewCanvas.width;
+
                         if (draggedVertex.id === 'H') {
                             // Restrict movement to X-axis by fixing the Y coordinate relative to L
                             state.planView.H.x = mouseX;
@@ -526,6 +549,9 @@
                     sideViewCanvas.addEventListener('mousemove', (e) => handleMouseMove(e, sideViewCanvas));
                     sideViewCanvas.addEventListener('mouseup', handleMouseUp);
                     sideViewCanvas.addEventListener('mouseout', handleMouseUp);
+                    sideViewCanvas.addEventListener('touchstart', (e) => handleMouseDown(e.touches[0], sideViewCanvas));
+                    sideViewCanvas.addEventListener('touchmove', (e) => handleMouseMove(e.touches[0], sideViewCanvas));
+                    sideViewCanvas.addEventListener('touchend', handleMouseUp);
                 }
                 
                 if (planViewCanvas) {
@@ -533,6 +559,9 @@
                     planViewCanvas.addEventListener('mousemove', (e) => handleMouseMove(e, planViewCanvas));
                     planViewCanvas.addEventListener('mouseup', handleMouseUp);
                     planViewCanvas.addEventListener('mouseout', handleMouseUp);
+                    planViewCanvas.addEventListener('touchstart', (e) => handleMouseDown(e.touches[0], planViewCanvas));
+                    planViewCanvas.addEventListener('touchmove', (e) => handleMouseMove(e.touches[0], planViewCanvas));
+                    planViewCanvas.addEventListener('touchend', handleMouseUp);
                 }
 
                 // Input field blur handler
