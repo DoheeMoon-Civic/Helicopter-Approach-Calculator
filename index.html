@@ -259,8 +259,8 @@
                     // Draw the 1-mile marker and label
                     drawMarker(sideViewCtx, MILE_MARKER_SIDE.x, MILE_MARKER_SIDE.y, '1 mile');
 
-                    // Draw approach type label at the center of the triangle
-                    if (draggedVertex && draggedVertex.view === 'sideView') {
+                    // Draw labels related to approach type when the red dot is dragged
+                    if (draggedVertex && draggedVertex.view === 'sideView' && draggedVertex.id === 'A') {
                         const height = state.altitude - state.fieldElevation;
                         const angleRad = Math.atan2(height, state.groundDistance * MILE_IN_FEET);
                         const angleDeg = angleRad * 180 / Math.PI;
@@ -291,6 +291,13 @@
                         if (newLabel) {
                             // Position the label to the right of the red dot (pA)
                             drawLabel(sideViewCtx, newLabel, pA.x + 20, pA.y);
+                        }
+
+                        // Draw the angle label next to the blue landing spot
+                        if (!isNaN(angleDeg) && isFinite(angleDeg)) {
+                            const angleLabelText = `${angleDeg.toFixed(2)}°`;
+                            // Position to the right of the blue dot
+                            drawLabel(sideViewCtx, angleLabelText, pB.x + 20, pB.y - 15);
                         }
                     }
                     
