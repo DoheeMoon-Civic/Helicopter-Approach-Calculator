@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Helicopter Approach Calculator</title>
+    <!-- Use Tailwind CSS for styling. -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+        }
+        .canvas-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            padding-top: 50%; /* 2:1 ratio */
+            background-color: #d1d5db;
+        }
+        .canvas-container-top {
+            position: relative;
+            width: 100%;
+            height: 50%;
+            background-color: #d1d5db;
+        }
+        .canvas-bg-image {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        #glidingCanvas, #planViewCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+        }
+        .editable-field {
+            cursor: text;
+            border-bottom: 2px solid transparent;
+            transition: border-color 0.2s ease-in-out;
+            outline: none;
+            min-width: 50px;
+        }
+        .editable-field:hover, .editable-field:focus {
+            border-bottom: 2px solid #3b82f6;
+        }
+        .fixed-field {
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex h-screen overflow-hidden">
+
+    <!-- Left panel (calculation results and input) -->
+    <div class="bg-white rounded-r-2xl shadow-xl p-8 max-w-sm w-full flex-shrink-0 flex flex-col gap-8 h-full overflow-y-auto">
+        <h1 class="text-3xl font-bold text-gray-800">Helicopter Approach Calculator</h1>
+        <p class="text-gray-600 leading-relaxed">
+            Drag the red dot in either view to adjust the altitude and ground distance and see the gliding angle. The landing spot (blue dot) is fixed.
+            <br>
+            <ul class="list-disc list-inside mt-2">
+                <li><span class="font-semibold text-red-500">Red dot:</span> Current helicopter position</li>
+                <li><span class="font-semibold text-blue-500">Blue dot:</span> Landing spot (fixed)</li>
+                <li><span class="font-semibold text-green-500">Green dot:</span> Ground point directly below the helicopter</li>
+            </ul>
+        </p>
+
+        <div class="space-y-4">
+            <!-- Calculation result output and input area -->
+            <div class="bg-gray-50 rounded-lg p-4 shadow-sm">
+                <p class="text-gray-700 text-lg font-medium">
+                    <span class="text-red-600 font-bold">Altitude (MSL)</span>:
+                    <span id="altitudeValue" class="font-semibold text-gray-900 editable-field" contenteditable="true">2000</span> ft
+                </p>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-4 shadow-sm">
+                <p class="text-gray-700 text-lg font-medium">
+                    <span class="text-red-600 font-bold">Field Elevation</span>:
+                    <span id="fieldElevationValue" class="font-semibold text-gray-900 fixed-field">320</span> ft
+                </p>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-4 shadow-sm">
+                <p class="text-gray-700 text-lg font-medium">
+                    <span class="text-red-600 font-bold">Ground Distance</span>:
+                    <span id="groundDistanceValue" class="font-semibold text-gray-900 editable-field" contenteditable="true">1</span> mile
+                </p>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-4 shadow-sm">
+                <p class="text-gray-700 text-lg font-medium">
+                    <span class="text-red-600 font-bold">Height (AGL)</span>:
+                    <span id="heightValue" class="font-semibold text-gray-900">0.00</span> ft
+                </p>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-4 shadow-sm">
+                <p class="text-gray-700 text-lg font-medium">
+                    <span class="text-red-600 font-bold">Gliding Angle</span>:
+                    <span id="angleValue" class="font-semibold text-gray-900">0.00</span>°
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Right canvas area -->
+    <div class="flex-1 flex flex-col gap-4 relative rounded-xl overflow-hidden p-4">
+        <!-- Top view -->
+        <div id="planViewContainer" class="canvas-container-top rounded-xl overflow-hidden relative">
+            <img id="planViewBgImage" class="canvas-bg-image" src="file:///C:/Users/hihel/OneDrive/%EC%82%AC%EC%A7%84/%EC%8A%A4%ED%81%AC%EB%A6%B0%EC%83%B7/%EC%8A%A4%ED%81%AC%EB%A6%B0%EC%83%B7%202025-07-31%20223501.png" alt="Virtual airport map (Top View)">
+            <canvas id="planViewCanvas"></canvas>
+        </div>
+        <!-- Side view -->
+        <div id="sideViewContainer" class="canvas-container rounded-xl overflow-hidden relative">
+            <img id="sideViewBgImage" class="canvas-bg-image" src="file:///C:/Users/hihel/OneDrive/%EC%82%AC%EC%A7%84/%EC%8A%A4%ED%81%AC%EB%A6%B0%EC%83%B7/%EC%8A%A4%ED%81%AC%EB%A6%B0%EC%83%B7%202025-07-31%20223642.png" alt="Virtual airport map (Side View)">
+            <canvas id="glidingCanvas"></canvas>
+        </div>
+    </div>
+
+    <script>
+        window.onload = function() {
+            try {
+                // Get all canvas and container elements
+                const sideViewContainer = document.getElementById('sideViewContainer');
+                const sideViewBg = document.getElementById('sideViewBgImage');
+                const sideViewCanvas = document.getElementById('glidingCanvas');
+                const sideViewCtx = sideViewCanvas ? sideViewCanvas.getContext('2d') : null;
+
+                const planViewContainer = document.getElementById('planViewContainer');
+                const planViewBg = document.getElementById('planViewBgImage');
+                const planViewCanvas = document.getElementById('planViewCanvas');
+                const planViewCtx = planViewCanvas ? planViewCanvas.getContext('2d') : null;
+
+                // Get all value display elements
+                const altitudeValueEl = document.getElementById('altitudeValue');
+                const fieldElevationValueEl = document.getElementById('fieldElevationValue');
+                const groundDistanceValueEl = document.getElementById('groundDistanceValue');
+                const heightValueEl = document.getElementById('heightValue');
+                const angleValueEl = document.getElementById('angleValue');
+                
+                // Fixed values and scale constants
+                const MILE_IN_FEET = 5280;
+                // PIXELS_PER_MILE_TOP: Calculated from top view 1 mile marker x (840) and landing point x (486)
+                const PIXELS_PER_MILE_TOP = 840 - 486; // 354 pixels per mile
+                // PIXELS_PER_MILE_SIDE: Calculated from side view 1 mile marker x (834) and landing point x (128)
+                const PIXELS_PER_MILE_SIDE = 834 - 128; // 706 pixels per mile
+                const PIXELS_PER_FOOT_SIDE = PIXELS_PER_MILE_SIDE / MILE_IN_FEET;
+                const FIELD_ELEVATION_FT = 320;
+                const L_FIXED = { x: 486.00, y: 78.00 }; // Fixed coordinates for top view landing spot
+                const B_FIXED = { x: 128.00, y: 609.59 }; // Fixed coordinates for side view landing spot
+                const MILE_MARKER_TOP = { x: L_FIXED.x + PIXELS_PER_MILE_TOP, y: L_FIXED.y };
+                const MILE_MARKER_SIDE = { x: B_FIXED.x + PIXELS_PER_MILE_SIDE, y: B_FIXED.y };
+
+                // State object to hold all synchronized values
+                const state = {
+                    altitude: 2000, // in ft
+                    groundDistance: 1, // in miles
+                    fieldElevation: FIELD_ELEVATION_FT, // in ft
+                    sideView: {
+                        A: { x: 0, y: 0, fixed: false }, // Helicopter point (red)
+                        B: B_FIXED,  // Landing point (blue), now fixed
+                        groundLevelY: B_FIXED.y, // Y-coordinate of the ground line
+                    },
+                    planView: {
+                        H: { x: 0, y: 0, fixed: false }, // Helicopter position (red)
+                        L: L_FIXED   // Landing spot (blue), now fixed
+                    },
+                    selectedVertex: null
+                };
+
+                let draggedVertex = null;
+
+                // Function to synchronize input fields with the state
+                function syncInputsToState() {
+                    state.altitude = parseFloat(altitudeValueEl.textContent) || 0;
+                    state.groundDistance = parseFloat(groundDistanceValueEl.textContent) || 0;
+                    // Field elevation is now fixed
+                    fieldElevationValueEl.textContent = state.fieldElevation.toFixed(0);
+                }
+
+                // Function to synchronize state to input fields
+                function syncStateToInputs() {
+                    const height = state.altitude - state.fieldElevation;
+                    const angleRad = Math.atan2(height, state.groundDistance * MILE_IN_FEET);
+                    const angleDeg = angleRad * 180 / Math.PI;
+
+                    if (altitudeValueEl) altitudeValueEl.textContent = height >= 0 ? state.altitude.toFixed(0) : "N/A";
+                    if (groundDistanceValueEl) groundDistanceValueEl.textContent = state.groundDistance.toFixed(2);
+                    if (heightValueEl) heightValueEl.textContent = height >= 0 ? height.toFixed(0) : "N/A";
+                    if (angleValueEl) angleValueEl.textContent = height >= 0 ? angleDeg.toFixed(2) : "N/A";
+                }
+
+                // Function to draw the side view (the right-angle triangle)
+                function drawSideView() {
+                    if (!sideViewCanvas || !sideViewCtx) return;
+                    sideViewCtx.clearRect(0, 0, sideViewCanvas.width, sideViewCanvas.height);
+                    
+                    sideViewCtx.save();
+                    
+                    const pA = state.sideView.A;
+                    const pB = state.sideView.B;
+                    // The ground point (green) is calculated from A's x and B's y
+                    const pC = { x: pA.x, y: pB.y }; 
+                    
+                    // Draw the triangle lines
+                    sideViewCtx.beginPath();
+                    sideViewCtx.moveTo(pA.x, pA.y);
+                    sideViewCtx.lineTo(pB.x, pB.y);
+                    sideViewCtx.lineTo(pC.x, pC.y);
+                    sideViewCtx.closePath();
+                    sideViewCtx.strokeStyle = '#374151';
+                    sideViewCtx.lineWidth = 2;
+                    sideViewCtx.stroke();
+
+                    // Draw height line (red)
+                    sideViewCtx.beginPath();
+                    sideViewCtx.moveTo(pA.x, pA.y);
+                    sideViewCtx.lineTo(pC.x, pC.y);
+                    sideViewCtx.strokeStyle = '#ef4444';
+                    sideViewCtx.lineWidth = 3;
+                    sideViewCtx.stroke();
+
+                    // Draw ground distance line (green)
+                    sideViewCtx.beginPath();
+                    sideViewCtx.moveTo(pC.x, pC.y);
+                    sideViewCtx.lineTo(pB.x, pB.y);
+                    sideViewCtx.strokeStyle = '#10b981';
+                    sideViewCtx.lineWidth = 3;
+                    sideViewCtx.stroke();
+
+                    // Draw gliding distance line (blue)
+                    sideViewCtx.beginPath();
+                    sideViewCtx.moveTo(pA.x, pA.y);
+                    sideViewCtx.lineTo(pB.x, pB.y);
+                    sideViewCtx.strokeStyle = '#3b82f6';
+                    sideViewCtx.lineWidth = 3;
+                    sideViewCtx.stroke(); 
+                    
+                    const drawVertex = (ctx, x, y, color) => {
+                        ctx.beginPath();
+                        ctx.arc(x, y, 8, 0, 2 * Math.PI);
+                        ctx.fillStyle = color;
+                        ctx.fill();
+                        ctx.strokeStyle = '#fff';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                    };
+                    drawVertex(sideViewCtx, pA.x, pA.y, '#ef4444');
+                    drawVertex(sideViewCtx, pB.x, pB.y, '#3b82f6');
+                    drawVertex(sideViewCtx, pC.x, pC.y, '#10b981'); 
+                    drawRightAngleSymbol(sideViewCtx, pC, pA, pB);
+
+                    // Draw the 1-mile marker and label
+                    drawMarker(sideViewCtx, MILE_MARKER_SIDE.x, MILE_MARKER_SIDE.y, '1 mile');
+
+                    // Draw approach type label at the center of the triangle
+                    if (draggedVertex && draggedVertex.view === 'sideView') {
+                        const height = state.altitude - state.fieldElevation;
+                        const angleRad = Math.atan2(height, state.groundDistance * MILE_IN_FEET);
+                        const angleDeg = angleRad * 180 / Math.PI;
+
+                        let approachLabel = '';
+                        if (angleDeg >= 3 && angleDeg <= 5) {
+                            approachLabel = "Shallow approach";
+                        } else if (angleDeg >= 7 && angleDeg <= 12) {
+                            approachLabel = "Normal approach";
+                        } else if (angleDeg >= 13 && angleDeg <= 15) {
+                            approachLabel = "Steep approach";
+                        }
+                        
+                        if (approachLabel) {
+                            const centerX = (pA.x + pB.x + pC.x) / 3;
+                            const centerY = (pA.y + pB.y + pC.y) / 3;
+                            drawLabel(sideViewCtx, approachLabel, centerX, centerY);
+                        }
+
+                        // Add new labels based on angle range
+                        let newLabel = '';
+                        if (angleDeg >= 14 && angleDeg <= 15) {
+                            newLabel = "Max distance glide Autorotation 4:1";
+                        } else if (angleDeg >= 18 && angleDeg <= 19) {
+                            newLabel = "Minimum rate of descent Autorotation 3:1";
+                        }
+
+                        if (newLabel) {
+                            // Position the label to the right of the red dot (pA)
+                            drawLabel(sideViewCtx, newLabel, pA.x + 20, pA.y);
+                        }
+                    }
+                    
+                    sideViewCtx.restore();
+                }
+
+                // Function to draw the top view (circle and line)
+                function drawPlanView() {
+                    if (!planViewCanvas || !planViewCtx) return;
+                    planViewCtx.clearRect(0, 0, planViewCanvas.width, planViewCanvas.height);
+                    
+                    planViewCtx.save();
+                    
+                    const pH = state.planView.H;
+                    const pL = state.planView.L;
+                    
+                    const radius = Math.abs(pL.x - pH.x); // Ground distance in pixels
+
+                    // Draw the ground distance circle
+                    planViewCtx.beginPath();
+                    planViewCtx.arc(pL.x, pL.y, radius, 0, 2 * Math.PI);
+                    planViewCtx.strokeStyle = '#10b981'; // Green circle
+                    planViewCtx.lineWidth = 2;
+                    planViewCtx.stroke();
+
+                    // Draw the line from helicopter to landing spot
+                    planViewCtx.beginPath();
+                    planViewCtx.moveTo(pH.x, pH.y);
+                    planViewCtx.lineTo(pL.x, pL.y);
+                    planViewCtx.strokeStyle = '#10b981'; // Green line
+                    planViewCtx.lineWidth = 3;
+                    planViewCtx.stroke();
+
+                    const drawVertex = (ctx, x, y, color) => {
+                        ctx.beginPath();
+                        ctx.arc(x, y, 8, 0, 2 * Math.PI);
+                        ctx.fillStyle = color;
+                        ctx.fill();
+                        ctx.strokeStyle = '#fff';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                    };
+                    drawVertex(planViewCtx, pH.x, pH.y, '#ef4444');
+                    drawVertex(planViewCtx, pL.x, pL.y, '#3b82f6');
+
+                    // Draw the 1-mile marker and label
+                    drawMarker(planViewCtx, MILE_MARKER_TOP.x, MILE_MARKER_TOP.y, '1 mile');
+
+                    planViewCtx.restore();
+                }
+
+                function drawRightAngleSymbol(ctx, center, p1, p2) {
+                    if (!ctx) return;
+                    const size = 15;
+                    const angle1 = Math.atan2(p1.y - center.y, p1.x - center.x);
+                    const angle2 = Math.atan2(p2.y - center.y, p2.x - center.x);
+                    
+                    const cornerX = center.x + Math.cos(angle1) * size * 0.7 + Math.cos(angle2) * size * 0.7;
+                    const cornerY = center.y + Math.sin(angle1) * size * 0.7 + Math.sin(angle2) * size * 0.7;
+
+                    ctx.beginPath();
+                    ctx.moveTo(center.x + Math.cos(angle1) * size * 0.7, center.y + Math.sin(angle1) * size * 0.7);
+                    ctx.lineTo(cornerX, cornerY);
+                    ctx.lineTo(center.x + Math.cos(angle2) * size * 0.7, center.y + Math.sin(angle2) * size * 0.7);
+                    
+                    ctx.strokeStyle = '#374151';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+                
+                function drawMarker(ctx, x, y, label) {
+                    // Draw the white dot with a black border
+                    ctx.beginPath();
+                    ctx.arc(x, y, 5, 0, 2 * Math.PI);
+                    ctx.fillStyle = '#ffffff'; // White dot
+                    ctx.fill();
+                    ctx.strokeStyle = '#000000'; // Black border
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                    
+                    // Draw the white text with a black border
+                    drawLabel(ctx, label, x + 10, y + 5);
+                }
+
+                function drawLabel(ctx, text, x, y) {
+                    ctx.font = "bold 12px Inter"; // Make it bold for better visibility with a border
+                    ctx.strokeStyle = '#000000'; // Black border for text
+                    ctx.lineWidth = 2; // Thicker line for the text border
+                    ctx.strokeText(text, x, y);
+                    ctx.fillStyle = '#ffffff'; // White text fill
+                    ctx.fillText(text, x, y);
+                }
+
+                function getDistance(p1, p2) {
+                    return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+                }
+                
+                // Get vertex from mouse position for a specific canvas
+                function getVertexAtMouse(canvas, mouseX, mouseY) {
+                    if (!canvas) return null;
+                    const checkDistance = 15;
+                    if (canvas === sideViewCanvas) {
+                        // Check if mouse is near point A (red)
+                        if (getDistance({ x: mouseX, y: mouseY }, state.sideView.A) < checkDistance) {
+                            return { view: 'sideView', id: 'A' };
+                        }
+                        // Check if mouse is near point C (green)
+                        const pC = { x: state.sideView.A.x, y: state.sideView.B.y };
+                        if (getDistance({ x: mouseX, y: mouseY }, pC) < checkDistance) {
+                            return { view: 'sideView', id: 'C' };
+                        }
+                    } else if (canvas === planViewCanvas) {
+                        // Check if mouse is near point H (red)
+                        if (getDistance({ x: mouseX, y: mouseY }, state.planView.H) < checkDistance) {
+                             return { view: 'planView', id: 'H' };
+                        }
+                    }
+                    return null;
+                }
+
+                // Initial setup for canvas points based on state
+                function initializePoints() {
+                    if (sideViewCanvas && planViewCanvas) {
+                        // The blue points are now fixed based on constants
+                        state.sideView.B.x = B_FIXED.x;
+                        state.sideView.B.y = B_FIXED.y;
+                        state.planView.L.x = L_FIXED.x;
+                        state.planView.L.y = L_FIXED.y;
+
+                        // Calculate red point position based on current state values and new proportional scales
+                        const groundDistPixelsSide = state.groundDistance * PIXELS_PER_MILE_SIDE;
+                        const groundDistPixelsTop = state.groundDistance * PIXELS_PER_MILE_TOP;
+                        const altitudePixels = (state.altitude - state.fieldElevation) * PIXELS_PER_FOOT_SIDE;
+
+                        state.sideView.A.x = state.sideView.B.x + groundDistPixelsSide;
+                        state.sideView.A.y = state.sideView.B.y - altitudePixels;
+
+                        state.planView.H.x = state.planView.L.x + groundDistPixelsTop;
+                        state.planView.H.y = state.planView.L.y;
+                        
+                        drawAll();
+                    }
+                }
+
+                // Draws both canvases
+                function drawAll() {
+                    drawSideView();
+                    drawPlanView();
+                }
+
+                // Resize handler for both canvases
+                const resizeCanvas = () => {
+                    if (sideViewContainer && planViewContainer) {
+                        sideViewCanvas.width = sideViewContainer.clientWidth;
+                        sideViewCanvas.height = sideViewContainer.clientHeight;
+                        planViewCanvas.width = planViewContainer.clientWidth;
+                        planViewCanvas.height = planViewContainer.clientHeight;
+                        initializePoints();
+                    }
+                };
+                window.addEventListener('resize', resizeCanvas);
+                resizeCanvas();
+                
+                // Unified mouse down handler for both canvases
+                const handleMouseDown = (e, canvas) => {
+                    e.preventDefault();
+                    if (!canvas) return;
+                    const rect = canvas.getBoundingClientRect();
+                    const mouseX = e.clientX - rect.left;
+                    const mouseY = e.clientY - rect.top;
+
+                    const vertexInfo = getVertexAtMouse(canvas, mouseX, mouseY);
+                    
+                    if (vertexInfo) {
+                        draggedVertex = vertexInfo;
+                        state.selectedVertex = vertexInfo;
+                    }
+                };
+
+                // Unified mouse move handler for both canvases
+                const handleMouseMove = (e, canvas) => {
+                    if (!canvas || !draggedVertex) return;
+                    const rect = canvas.getBoundingClientRect();
+                    const mouseX = e.clientX - rect.left;
+                    const mouseY = e.clientY - rect.top;
+                    
+                    if (draggedVertex.view === 'sideView') {
+                        if (draggedVertex.id === 'A') {
+                            state.sideView.A.x = mouseX;
+                            state.sideView.A.y = mouseY;
+                            state.altitude = (state.sideView.B.y - state.sideView.A.y) / PIXELS_PER_FOOT_SIDE + state.fieldElevation;
+                            state.groundDistance = Math.abs(state.sideView.B.x - state.sideView.A.x) / PIXELS_PER_MILE_SIDE;
+                        } else if (draggedVertex.id === 'C') {
+                            // Dragging the green point moves the whole vertical line horizontally
+                            state.sideView.A.x = mouseX;
+                            state.groundDistance = Math.abs(state.sideView.B.x - state.sideView.A.x) / PIXELS_PER_MILE_SIDE;
+                        }
+                        // Update the top view's red dot based on the new groundDistance, maintaining proportionality
+                        state.planView.H.x = state.planView.L.x + (state.groundDistance * PIXELS_PER_MILE_TOP);
+
+                    } else if (draggedVertex.view === 'planView') {
+                        if (draggedVertex.id === 'H') {
+                            // Restrict movement to X-axis by fixing the Y coordinate relative to L
+                            state.planView.H.x = mouseX;
+                            state.planView.H.y = state.planView.L.y;
+                            state.groundDistance = Math.abs(state.planView.L.x - state.planView.H.x) / PIXELS_PER_MILE_TOP;
+                        }
+                        // Update the side view's red dot based on the new groundDistance, maintaining proportionality
+                        state.sideView.A.x = state.sideView.B.x + (state.groundDistance * PIXELS_PER_MILE_SIDE);
+                    }
+
+                    syncStateToInputs();
+                    drawAll();
+                };
+                
+                // Unified mouse up handler
+                const handleMouseUp = () => {
+                    draggedVertex = null;
+                    // Redraw to remove the angle indicators
+                    drawAll();
+                };
+
+                // Add event listeners with null checks
+                if (sideViewCanvas) {
+                    sideViewCanvas.addEventListener('mousedown', (e) => handleMouseDown(e, sideViewCanvas));
+                    sideViewCanvas.addEventListener('mousemove', (e) => handleMouseMove(e, sideViewCanvas));
+                    sideViewCanvas.addEventListener('mouseup', handleMouseUp);
+                    sideViewCanvas.addEventListener('mouseout', handleMouseUp);
+                }
+                
+                if (planViewCanvas) {
+                    planViewCanvas.addEventListener('mousedown', (e) => handleMouseDown(e, planViewCanvas));
+                    planViewCanvas.addEventListener('mousemove', (e) => handleMouseMove(e, planViewCanvas));
+                    planViewCanvas.addEventListener('mouseup', handleMouseUp);
+                    planViewCanvas.addEventListener('mouseout', handleMouseUp);
+                }
+
+                // Input field blur handler
+                const handleInput = () => {
+                    syncInputsToState();
+                    // Update canvas points based on new input values
+                    initializePoints();
+                    syncStateToInputs();
+                    drawAll();
+                };
+
+                if (altitudeValueEl) altitudeValueEl.addEventListener('blur', handleInput);
+                if (groundDistanceValueEl) groundDistanceValueEl.addEventListener('blur', handleInput);
+                
+                if (altitudeValueEl) altitudeValueEl.addEventListener('keypress', (event) => { if (event.key === 'Enter') { event.preventDefault(); event.target.blur(); } });
+                if (groundDistanceValueEl) groundDistanceValueEl.addEventListener('keypress', (event) => { if (event.key === 'Enter') { event.preventDefault(); event.target.blur(); } });
+
+                // Initial setup
+                syncInputsToState();
+                initializePoints();
+                syncStateToInputs();
+                drawAll();
+
+            } catch (error) {
+                console.error("An error occurred during window.onload:", error);
+            }
+        };
+    </script>
+</body>
+</html>
